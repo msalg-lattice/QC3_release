@@ -1,27 +1,59 @@
-import numpy as np, sys
+import numpy as np, sys, math
 pi=np.pi; LA=np.linalg; exp=np.exp
 from scipy.linalg import block_diag
-from scipy.special import erfi,erfc
-from scipy.optimize import fsolve
+from scipy.special import erfi
+import numba
+from numba import njit
 
 import defns
 from constants import *
 sqrt = defns.sqrt
+check_real = defns.check_real
+
+#This is an asymptotic expansion of erfc function. Numba doesn't accept scipy.special.erfc
+@njit(fastmath=True,nogil=True,cache=True)
+def myerfc2(x):
+    return exp(-x**2)/np.sqrt(pi)/x*(1.- 1./2/x**2 + 3./(2.*x**2)**2)
+
+@njit(fastmath=True,cache=True)
+def myerfi(z):
+    """
+    Fast nopython path for nearly-pure-imag inputs using erfi(i*y)=i*erf(y).
+    For general complex z, fall back to SciPy.erfi inside an objmode block.
+    (Objmode calls are slower — use only when necessary.)
+    """
+    tol = 1e-15
+    if abs(z.real) <= tol * max(1.0, abs(z.imag)):
+        # exact identity for pure imaginary
+        return 1j * math.erf(z.imag)
+
+    # otherwise call SciPy.erfi in object mode
+    res = 0+0j
+    # Note: numba.objmode only allowed inside an njit function
+    # and will execute the block in object mode (Python/SciPy)
+    with numba.objmode(res='complex128'):
+        res = erfi(z)   # SciPy does the robust Faddeeva-based computation
+    return res
 
 ################################################################################
 # Find maximum n needed in UV regime for sum_smooth_nnk & sum_full_nnk
 ################################################################################
+@njit(fastmath=True,cache=True)
 def getnmaxreal(cutoff,hhk,gam,x2):
   alpha = get_alpha()
-  # Note: hhk factor helps avoid runtime issue at shell thresholds (large gamma, but tiny hhk)
-  f = lambda lam: hhk*gam * 2*pi*sqrt(pi/alpha)*exp(alpha*x2) * erfc(sqrt(alpha)*lam) - cutoff
-  lam = fsolve(f,5)[0]
-  nmax_real = lam*gam
+  n0=5
+  res = hhk*gam * 2*pi*np.sqrt(pi/alpha) * exp(alpha*x2)*myerfc2(np.sqrt(alpha)*n0)
+  while(res>cutoff):
+    n0+=1
+    res = hhk*gam * 2*pi*np.sqrt(pi/alpha) * exp(alpha*x2)*myerfc2(np.sqrt(alpha)*n0)
+
+  nmax_real = n0*gam
   # print('hhk*gam, nmax_real:',hhk*gam,nmax_real)
   return nmax_real
 ################################################################################
 # Compute summand, modulo a common overall constant factor
 ################################################################################
+@njit(fastmath=True,cache=True)
 def summand(x2, rvec, l1,m1,l2,m2):
   r2 = sum(rvec**2)
   prop_den = x2-r2
@@ -32,25 +64,25 @@ def summand(x2, rvec, l1,m1,l2,m2):
 ################################################################################
 # Compute FULL sum w/o splitting pole/smooth parts
 ################################################################################
-def sum_full_nnk(E,nnP,L,nnk, Mijk=[1,1,1], waves='sp'):
+@njit(fastmath=True,cache=True)
+def sum_full_nnk(E,nnP,L,nnk, Mijk=np.array([1,1,1]), waves='sp'):
   [Mi, Mj, Mk] = Mijk
   W = defns.get_lm_size(waves)
   twopibyL = 2*pi/L
-  nnP=np.array(nnP); nnk=np.array(nnk)
 
-  kvec = np.array(nnk)*twopibyL
-  omk = sqrt(sum(kvec**2)+Mi**2)
+  kvec = nnk*twopibyL
+  omk = check_real(sqrt(np.sum(kvec**2)+Mi**2))
   E2k = E-omk
   nnP2k = nnP-nnk
-  sig_i = E2k**2 - sum(nnP2k**2)*twopibyL**2
+  sig_i = E2k**2 - np.sum(nnP2k**2)*twopibyL**2
   q2_i = defns.lambda_tri(sig_i,Mj**2,Mk**2)/(4*sig_i)
-  alpha_ij = sqrt(q2_i + Mj**2) / sqrt(sig_i)
+  alpha_ij = check_real(sqrt(q2_i + Mj**2) / sqrt(sig_i))
 
   hhk = defns.hh(sig_i, Mjk=[Mj,Mk])
   if hhk==0:
     return np.zeros((W,W))
 
-  gam = E2k/sqrt(sig_i)
+  gam = E2k/check_real(sqrt(sig_i))
   x2 = q2_i/twopibyL**2
 
   cutoff = get_cutoff()
@@ -61,12 +93,13 @@ def sum_full_nnk(E,nnP,L,nnk, Mijk=[1,1,1], waves='sp'):
   for n1 in range(-nmax,nmax+1):
     for n2 in range(-nmax,nmax+1):
       for n3 in range(-nmax,nmax+1):
-        nna = np.array([n1,n2,n3])
+        nna = np.array([n1,n2,n3], dtype=np.float64)
         if LA.norm(nna)<nmax_real: # and list(nna) not in nna_on_list:
-          if list(nnP2k)==[0,0,0]:
+          if np.all(nnP2k == 0):
             rvec = nna
           else:
-            rvec = nna + nnP2k * (np.dot(nna,nnP2k)/sum(nnP2k**2) * (1/gam-1) - alpha_ij/gam)
+            nnP2k_ = np.asarray(nnP2k, dtype=np.float64)
+            rvec = nna + nnP2k_ * (np.dot(nna,nnP2k_)/np.sum(nnP2k_**2) * (1/gam-1) - alpha_ij/gam)
           for i1 in range(W):
             [l1,m1] = defns.lm_idx(i1)
             for i2 in range(W):
@@ -78,6 +111,7 @@ def sum_full_nnk(E,nnP,L,nnk, Mijk=[1,1,1], waves='sp'):
 ################################################################################
 # Compute PV integral
 ################################################################################
+@njit(fastmath=True,cache=True)
 def int_nnk(L,gam,x2,waves='sp'):
   alpha = get_alpha()
   W = defns.get_lm_size(waves)
@@ -86,7 +120,7 @@ def int_nnk(L,gam,x2,waves='sp'):
   x = sqrt(x2)
   ax2 = alpha*x2
   e_ax2 = exp(ax2)
-  erfi_sqrt_ax2 = erfi(sqrt(ax2))
+  erfi_sqrt_ax2 = myerfi(sqrt(ax2))
   c = 4*pi*gam
 
   out_dict = {}
@@ -115,20 +149,21 @@ def int_nnk(L,gam,x2,waves='sp'):
 ################################################################################
 # Full \wt{F}^{(i)}(k) matrix w/o splitting pole/smooth terms
 ################################################################################
-def F_i_nnk(E,nnP,L,nnk, Mijk=[1,1,1], waves='sp'):
+@njit(fastmath=True,cache=True)
+def F_i_nnk(E,nnP,L,nnk, Mijk=np.array([1,1,1]), waves='sp'):
   [Mi,Mj,Mk] = Mijk
 
   twopibyL = 2*pi/L
-  Pvec = np.array(nnP)*twopibyL
-  kvec = np.array(nnk)*twopibyL
-  omk = sqrt(sum(kvec**2)+Mi**2)
+  Pvec = nnP*twopibyL
+  kvec = nnk*twopibyL
+  omk = check_real(sqrt(np.sum(kvec**2)+Mi**2))
   E2k = E - omk
 
-  sig_i = defns.sigma_i(E,Pvec,kvec,Mi=Mi)
+  sig_i = check_real(defns.sigma_i(E,Pvec,kvec,Mi=Mi))
   q2_i = defns.lambda_tri(sig_i,Mj**2,Mk**2)/(4*sig_i)
   hhk = defns.hh(sig_i, Mjk=[Mj,Mk])
 
-  gam = E2k/sqrt(sig_i)
+  gam = E2k/check_real(sqrt(sig_i))
   x2 = q2_i/twopibyL**2
 
 
@@ -144,12 +179,14 @@ def F_i_nnk(E,nnP,L,nnk, Mijk=[1,1,1], waves='sp'):
 ################################################################################
 # Full \wt{F}^{(i)} matrix computed from scratch
 ################################################################################
-def F_i_full_scratch(E,nnP,L, Mijk=[1,1,1], waves='sp', nnk_list=None, diag_only=True):
+def F_i_full_scratch(E,nnP,L, Mijk=np.array([1,1,1]), waves='sp', nnk_list=None, diag_only=True):
   if nnk_list==None:
     nnk_list = defns.list_nnk_nnP(E,L,nnP, Mijk=Mijk)
   Fi_diag = []
   for nnk in nnk_list:
-    Fi_diag.append(F_i_nnk(E,nnP,L,nnk, Mijk=Mijk, waves=waves))
+    nnP_array = np.asarray(nnP)
+    nnk_array = np.asarray(nnk)
+    Fi_diag.append(F_i_nnk(E,nnP_array,L,nnk_array, Mijk=Mijk, waves=waves))
   if diag_only==True:
     return Fi_diag
   else:
@@ -158,7 +195,7 @@ def F_i_full_scratch(E,nnP,L, Mijk=[1,1,1], waves='sp', nnk_list=None, diag_only
 ################################################################################
 # Full 2+1 matrix \wt{F} computed from scratch
 ################################################################################
-def F_full_2plus1_scratch(E,nnP,L, M12=[1,1], waves='sp', nnk_lists_12=None, diag_only=True):
+def F_full_2plus1_scratch(E,nnP,L, M12=np.array([1,1]), waves='sp', nnk_lists_12=None, diag_only=True):
   M1, M2 = M12
   #M123 = [M1, M1, M2]
   if nnk_lists_12 == None:
@@ -175,7 +212,7 @@ def F_full_2plus1_scratch(E,nnP,L, M12=[1,1], waves='sp', nnk_lists_12=None, dia
 ################################################################################
 # Full ND matrix \wt{F} computed from scratch
 ################################################################################
-def F_full_ND_scratch(E,nnP,L, M123=[1,1,1], waves='s', nnk_lists_123=None, diag_only=True):
+def F_full_ND_scratch(E,nnP,L, M123=np.array([1,1,1]), waves='s', nnk_lists_123=None, diag_only=True):
   F_diag = []
   for i in range(3):
     Mijk = defns.get_Mijk(M123,i)
@@ -199,7 +236,7 @@ def F_full_ID_scratch(E,nnP,L, nnk_list=None, diag_only=True):
   if nnk_list == None:
     nnk_list = defns.list_nnk_nnP(E,L,nnP)
   # Divide by 2 for Bose symmetry
-  F_diag = F_i_full_scratch(E,np.array(nnP),L, Mijk=[1,1,1], waves=waves, nnk_list=nnk_list, diag_only=True)
+  F_diag = F_i_full_scratch(E,np.array(nnP),L, Mijk=np.array([1,1,1]), waves=waves, nnk_list=nnk_list, diag_only=True)
   if diag_only==True:
     return 0.5*np.array(F_diag)
   else:
@@ -210,13 +247,15 @@ def F_full_ID_scratch(E,nnP,L, nnk_list=None, diag_only=True):
 # Full 2-pt. F matrices for ND & ID cases
 ################################################################################
 # ND case
-def F_2pt_ND(E2,nnP2,L, M12=[1,1], waves='sp'):
+@njit(fastmath=True,cache=True)
+def F_2pt_ND(E2,nnP2,L, M12=np.array([1,1]), waves='sp'):
   M1,M2 = M12
-  F = 2*L**3 * F_i_nnk(E2+1,nnP2,L,np.array([0,0,0]), Mijk=[1,M1,M2], waves=waves)
+  F = 2*L**3 * F_i_nnk(E2+1,nnP2,L,np.array([0,0,0]), Mijk=np.array([1,M1,M2]), waves=waves)
   return F
 
 # ID case (s-wave only)
+@njit(fastmath=True,cache=True)
 def F_2pt_ID(E2,nnP2,L):
   M1,M2 = M12
-  F = L**3 * F_i_nnk(E2+1,nnP2,L,np.array([0,0,0]), Mijk=[1,1,1], waves='s')
+  F = L**3 * F_i_nnk(E2+1,nnP2,L,np.array([0,0,0]), Mijk=np.array([1,1,1]), waves='s')
   return F

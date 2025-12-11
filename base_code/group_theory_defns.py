@@ -1,7 +1,7 @@
 import numpy as np, sys
 pi=np.pi; conj=np.conjugate; LA=np.linalg
 from itertools import permutations as perms
-import defns; sqrt=defns.sqrt
+import defns; sqrt=defns.sqrt; check_real=defns.check_real
 
 #from projections import l0_proj, l2_proj
 from scipy.linalg import block_diag
@@ -650,8 +650,8 @@ def free_levels_dict_3pt(M123,L,nnP,Ecm_max=5,sym='ID'):
     raise ValueError('Error: masses {} inconsistent with {} symmetry'.format(M123,sym))
 
   norm2 = lambda vec: sum([x**2 for x in vec])
-  Emax = sqrt(Ecm_max**2 + (2*pi/L)**2*norm2(nnP))
-  nmax = int(L/(2*pi) * sqrt((Emax-M0)*(Emax-3*M0))) # from assuming assuming 2 pts. at rest
+  Emax = check_real(sqrt(Ecm_max**2 + (2*pi/L)**2*norm2(nnP)))
+  nmax = int(L/(2*pi) * check_real(sqrt((Emax-M0)*(Emax-3*M0)))) # from assuming assuming 2 pts. at rest
 
   nvec_list = []
   for n1 in range(-nmax,nmax+1):
@@ -679,7 +679,7 @@ def free_levels_dict_3pt(M123,L,nnP,Ecm_max=5,sym='ID'):
       E12 = sqrt((2*pi/L)**2*n12_2 + M3**2)
 
       E = E1+E2+E12
-      Ecm = sqrt(E**2-(2*pi/L)**2*sum([x**2 for x in nnP]))
+      Ecm = check_real(sqrt(E**2-(2*pi/L)**2*sum([x**2 for x in nnP])))
 
       if Ecm <= Ecm_max:
         #print(nnP,config, [n1_2,n2_2,n12_2])

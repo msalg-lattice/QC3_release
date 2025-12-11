@@ -3,20 +3,26 @@ pi=np.pi; LA=np.linalg
 from itertools import permutations as perms
 from constants import *
 
-# from numba import jit,njit
+from numba import jit,njit
 
 ####################################################################################
 # This file defines several basic functions that get called multiple times
 ####################################################################################
 # Continue np.sqrt to handle negative arguments
-#@jit(nopython=True,fastmath=True,cache=True,nogil=True)
+@jit(nopython=True,fastmath=True,cache=True,nogil=True)
 def sqrt(x):
-  if x<0:
+  if np.real(x)<0.:
     return np.sqrt(-x)*1j
   else:
     return np.sqrt(x)
 
-# @jit(nopython=True,fastmath=True)
+@njit(fastmath=True,cache=True,nogil=True)
+def check_real(x):
+  if abs(np.imag(x))>1e-15:
+    raise ValueError('Unexpected imaginary part in check_real')
+  return np.real(x)
+
+@jit(nopython=True,fastmath=True,cache=True)
 def square(x):
   return x**2
 
@@ -29,7 +35,7 @@ def vec_hat(vec):
     return np.array(vec)/v
 
 # om_k
-# @njit(fastmath=True,cache=True)
+@njit(fastmath=True,cache=True)
 def omega(k,m=1):
 	return sqrt( k**2 + m**2 )
 
@@ -39,17 +45,18 @@ def omega(k,m=1):
 # 	return sqrt( 1 + E**2 - 2 * E * omega(k) ) # should always be >=0
 
 # sigma_i or (E2k*)^2
-#@njit(fastmath=True,cache=True)
+@njit(fastmath=True,cache=True)
 def sigma_i(E,Pvec,pvec_i,Mi=1):
-  p = LA.norm(pvec_i)
-  return (E-omega(p,Mi))**2 - LA.norm(np.array(Pvec)-np.array(pvec_i))**2  # should always be >=0
+  p = LA.norm(np.asarray(pvec_i))
+  return (E-omega(p,Mi))**2 - LA.norm(np.asarray(Pvec)-np.asarray(pvec_i))**2  # should always be >=0
 
 # Triangle function lambda(a,b,c)
+@njit(fastmath=True,cache=True)
 def lambda_tri(a,b,c):
   return a**2+b**2+c**2 - 2*(a*b+a*c+b*c)
 
-# @njit(fastmath=True,cache=True)
-def qst2_i(E,Pvec,pvec_i, Mijk=[1,1,1]):
+@njit(fastmath=True,cache=True)
+def qst2_i(E,Pvec,pvec_i, Mijk=np.array([1,1,1])):
   [Mi,Mj,Mk] = Mijk
   s_i = sigma_i(E,Pvec,pvec_i, Mi=Mi)
   return lambda_tri(s_i,Mj**2,Mk**2)/(4*s_i)
@@ -58,6 +65,7 @@ def qst2_i(E,Pvec,pvec_i, Mijk=[1,1,1]):
 # Spectator cutoff functions
 ################################################################################
 # J function for spectator cutoff fn.
+@njit(fastmath=True,cache=True)
 def jj(x):
   # (xmin, xmax) = (0.02, 0.97)
   xmin, xmax = get_xrange()
@@ -69,6 +77,7 @@ def jj(x):
     return 0.
 
 # Spectator cutoff fn. H_i(k)=hh(sig_i)
+@njit(fastmath=True,cache=True)
 def hh(sig_i,Mjk=[1,1]):
   epsH = get_epsH()
   [Mj,Mk] = Mjk
@@ -78,17 +87,17 @@ def hh(sig_i,Mjk=[1,1]):
 
 ################################################################################
 # Boost pvec to rest frame of P2=(E2,P2vec)
-#@njit(fastmath=True,cache=True)
+@njit(fastmath=True,cache=True)
 def boost(p0, pvec, E2, P2vec):
-  if list(P2vec) == [0,0,0]:
-    return np.array(pvec)
-  pvec = np.array(pvec); P2vec = np.array(P2vec)
+  if np.all(P2vec==0):
+    return np.asarray(pvec)
+  pvec = np.asarray(pvec); P2vec = np.asarray(P2vec)
 
-  P2norm = sqrt(sum(P2vec**2))
+  P2norm = check_real(sqrt(np.sum(P2vec**2)))
   P2hat = P2vec/P2norm
 
   beta2 = P2norm/E2
-  gam2 = 1./sqrt(1.-beta2**2)
+  gam2 = 1./check_real(sqrt(1.-beta2**2))
 
   out = pvec + ((gam2-1)*np.dot(pvec,P2hat) - gam2*beta2*p0)*P2hat
   return out
@@ -120,6 +129,7 @@ def get_Mijk(M123,i,j=None):
   return [M123[i],M123[j],M123[k]]
 
 # Return number of distinct lm elements given partial waves used
+@jit(nopython=True,fastmath=True,cache=True)
 def get_lm_size(waves):
   if waves=='s':
     return 1
@@ -129,21 +139,25 @@ def get_lm_size(waves):
     return 6
   elif waves=='spd':
     return 9
+  else:
+    raise ValueError('Invalid waves input in get_lm_size')
 
 # Convert block-matrix index to (l,m)
-# @jit(nopython=True,fastmath=True,parallel=True) #FRL, it speeds up a bit. I changed the error condition to make it compatible with numba.
+@jit(nopython=True,fastmath=True,cache=True) #FRL, it speeds up a bit. I changed the error condition to make it compatible with numba.
 def lm_idx(i,waves='sp'):
   W = get_lm_size(waves)
   i = i%W
   if i==0:
-    return (0,0)
+    return [0,0]
   elif waves=='sd':
-    return (2,i-3)
+    return [2,i-3]
   elif 'p' in waves:
     if i<=3:
-      return (1,i-2)
+      return [1,i-2]
     elif 'd' in waves:
-      return (2,i-6)
+      return [2,i-6]
+  else:
+    raise ValueError('Invalid index in lm_idx')
 
 # Replace small real numbers in array with zero
 def chop(arr,tol=1e-13):
@@ -156,8 +170,8 @@ def chop(arr,tol=1e-13):
 # Permutation conventions: 000, 00a, aa0, aaa, ab0, aab, abc
 ####################################################################################
 # Find maximum allowed norm(k) for given E,Pvec by considering the extreme case khat=Phat
-#@jit(nopython=True,fastmath=True,cache=True)
-def kmax_Pvec(E, Pvec, Mijk=[1,1,1]):
+@jit(nopython=True,fastmath=True,cache=True)
+def kmax_Pvec(E, Pvec, Mijk=np.array([1,1,1])):
   [Mi, Mj, Mk] = Mijk
   Psq = sum([x**2 for x in Pvec])
   Ecm2 = E**2-Psq
@@ -346,7 +360,7 @@ def orbit_nnk_list(orbit,nnP):
 # Create list of LG(P) orbits
 def orbit_list_nnP(E,L,nnP, Mijk=[1,1,1]):
   Pvec = 2*pi/L * np.array(nnP)
-  nmaxreal = kmax_Pvec(E,Pvec, Mijk=Mijk)*L/(2*pi)
+  nmaxreal = check_real(kmax_Pvec(E,Pvec, Mijk=Mijk)*L/(2*pi))
   nmax = int(np.floor(nmaxreal))
   orbits = []
   for n1 in range(-nmax,nmax+1):
@@ -354,7 +368,7 @@ def orbit_list_nnP(E,L,nnP, Mijk=[1,1,1]):
       for n3 in range(-nmax,nmax+1):
         if square(n1)+square(n2)+square(n3) <= square(nmaxreal):
           nnk = [n1,n2,n3]
-          if E > Emin_nnP(nnk, L, nnP, Mijk=Mijk):
+          if E > check_real(Emin_nnP(nnk, L, nnP, Mijk=Mijk)):
             orb = get_orbit(nnk,nnP)
             if orb not in orbits:
               #print(orb, orbits)
@@ -379,34 +393,34 @@ def list_nnk_nnP(E,L,nnP, Mijk=[1,1,1], return_orbits=False):
 ####################################################################################
 # Real spherical harmonics
 ####################################################################################
-#@jit(nopython=True,fastmath=True,parallel=True)
+@jit(nopython=True,fastmath=True,cache=True)
 def y1real(kvec,m): # y1 = sqrt(4pi) * |kvec| * Y1
   if m==-1:
-    return sqrt(3)*kvec[1]
+    return np.sqrt(3)*kvec[1]
   elif m==0:
-    return sqrt(3)*kvec[2]
+    return np.sqrt(3)*kvec[2]
   elif m==1:
-    return sqrt(3)*kvec[0]
+    return np.sqrt(3)*kvec[0]
   else:
     print('Error: invalid m input in y1real')
 
-#@jit(nopython=True,fastmath=True,parallel=True)
+@jit(nopython=True,fastmath=True,cache=True)
 def y2real(kvec,m): # y2 = sqrt(4pi) * |kvec|**2 * Y2
   if m==-2:
-    return sqrt(15)*kvec[0]*kvec[1]
+    return np.sqrt(15)*kvec[0]*kvec[1]
   elif m==-1:
-    return sqrt(15)*kvec[1]*kvec[2]
+    return np.sqrt(15)*kvec[1]*kvec[2]
   elif m==0:
-    return sqrt(5/4)*(2*square(kvec[2])-square(kvec[0])-square(kvec[1]))
+    return np.sqrt(5/4)*(2*square(kvec[2])-square(kvec[0])-square(kvec[1]))
   elif m==1:
-    return sqrt(15)*kvec[0]*kvec[2]
+    return np.sqrt(15)*kvec[0]*kvec[2]
   elif m==2:
-    return sqrt(15/4)*(square(kvec[0])-square(kvec[1]))
+    return np.sqrt(15/4)*(square(kvec[0])-square(kvec[1]))
   else:
     print('Error: invalid m input in y2real')
 
 # General spherical harmonic
-#@jit(nopython=True,fastmath=True,parallel=True)
+@jit(nopython=True,fastmath=True,cache=True)
 def ylm(kvec,l,m):
   if l==m==0:
     return 1

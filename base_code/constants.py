@@ -1,14 +1,17 @@
+from numba import njit
 
 ################################################################################
 # Spectator cutoff constants
 ################################################################################
 # Set xmin, xmax for J cutoff fn.
+@njit(fastmath=True,cache=True)
 def get_xrange():
   xmin = 0.02
   xmax = 0.97
   return xmin, xmax
 
 # Set epsH for H cutoff fn.
+@njit(fastmath=True,cache=True)
 def get_epsH():
   epsH = 0
   return epsH
@@ -17,11 +20,13 @@ def get_epsH():
 # UV cutoff constants in F
 ################################################################################
 # Set alpha_KSS (for smooth exponential UV cutoff)
+@njit(fastmath=True,cache=True)
 def get_alpha():
   alpha = 0.5
   return alpha
 
 # Set minimum cutoff for integral of UV momenta (R_Lambda=epsilon in beyond_iso)
+@njit(fastmath=True,cache=True)
 def get_cutoff():
   cutoff = 1e-9
   return cutoff

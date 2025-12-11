@@ -1,2 +1,9 @@
 
 *.pyc
+*.nbc
+*.nbi
+__pycache__/
+.ipynb_checkpoints/
+.history/
+.DS_Store
+.vscode/

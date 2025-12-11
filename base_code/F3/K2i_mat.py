@@ -1,21 +1,23 @@
+import sys
 import numpy as np
 sqrt=np.sqrt; pi=np.pi; LA=np.linalg
 from scipy.linalg import block_diag
 import defns
-# from numba import jit,njit
+check_real=defns.check_real
+from numba import jit,njit
 
 ################################################################################
 # Calculate matrix element of K2i_inv/(2*omega), no L^3
 ################################################################################
-#@njit(fastmath=True,cache=True)
+@jit(fastmath=True,cache=True,forceobj=True)
 def K2i_inv(E,kvec,l,m,Pvec,f_qcot_l, Mijk=[1,1,1], eta_i=1, IPV=0):
   [Mi,Mj,Mk] = Mijk
   k = LA.norm(kvec)
-  omk = defns.omega(k,m=Mi)
-  sig_i = defns.sigma_i(E,Pvec,kvec, Mi=Mi)
-  E2kstar = sqrt(sig_i)
-  q2 = defns.qst2_i(E,Pvec,kvec, Mijk=Mijk)
-  q_abs = sqrt(abs(q2))
+  omk = check_real(defns.omega(k,m=Mi))
+  sig_i = check_real(defns.sigma_i(E,Pvec,kvec, Mi=Mi))
+  E2kstar = check_real(sqrt(sig_i))
+  q2 = check_real(defns.qst2_i(E,Pvec,kvec, Mijk=Mijk))
+  q_abs = check_real(sqrt(abs(q2)))
   h = defns.hh(sig_i,Mjk=[Mj,Mk])
   if h==0:
     return 0.
@@ -32,7 +34,7 @@ def K2i_inv(E,kvec,l,m,Pvec,f_qcot_l, Mijk=[1,1,1], eta_i=1, IPV=0):
     return 0
 
   if out.imag > 1e-15:
-    sys.error('Error in K2i_inv: imaginary part in output')
+    sys.exit('Error in K2i_inv: imaginary part in output')
     raise ValueError
   else:
     out = out.real

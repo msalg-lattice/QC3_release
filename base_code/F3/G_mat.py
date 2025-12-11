@@ -2,27 +2,28 @@ import numpy as np
 sqrt=np.sqrt; pi=np.pi; LA=np.linalg
 # import sums_mov as sums
 import defns
-# from numba import jit,njit
+check_real=defns.check_real
+from numba import njit
 
 ################################################################################
 # Compute individual matrix element of Gtilde^{ij} = G^{ij}/(2*omega*L^3)
 ################################################################################
-#@njit(fastmath=True,cache=True)
-def G_ij(E, L, nnp, nnk,l1,m1,l2,m2,nnP, Mijk=[1,1,1], return_all=False):
+@njit(fastmath=True,cache=True)
+def G_ij(E, L, nnp, nnk,l1,m1,l2,m2,nnP, Mijk=[1,1,1]):
     # Setting return_all = True returns [G, nnks, nnps]; just G otherwise
     [Mpi, Mkj, Mbk] = Mijk
 
     twopibyL = 2*pi/L
-    p = LA.norm(nnp) * twopibyL
-    k = LA.norm(nnk) * twopibyL
-    pk = LA.norm(nnk+nnp) * twopibyL
-    nPk = LA.norm(nnk-nnP)
+    p = LA.norm(np.asarray(nnp, dtype=np.float64)) * twopibyL
+    k = LA.norm(np.asarray(nnk, dtype=np.float64)) * twopibyL
+    pk = LA.norm(np.asarray(nnk, dtype=np.float64)+np.asarray(nnp, dtype=np.float64)) * twopibyL
+    nPk = LA.norm(np.asarray(nnk, dtype=np.float64)-np.asarray(nnP, dtype=np.float64))
     Pk = nPk*twopibyL
-    nPp = LA.norm(nnp-nnP)
+    nPp = LA.norm(np.asarray(nnp, dtype=np.float64)-np.asarray(nnP, dtype=np.float64))
     Pp = nPp*twopibyL
 
-    omp = sqrt(Mpi**2+p**2)
-    omk = sqrt(Mkj**2+k**2)
+    omp = check_real(sqrt(Mpi**2+p**2))
+    omk = check_real(sqrt(Mkj**2+k**2))
     #ompk = np.sqrt(1+pk**2)
 
     pvec = nnp*twopibyL
@@ -32,10 +33,10 @@ def G_ij(E, L, nnp, nnk,l1,m1,l2,m2,nnP, Mijk=[1,1,1], return_all=False):
 
     bkp2 = (E-omp-omk)**2 - sum(bvec**2)
 
-    sig_pi = defns.sigma_i(E,Pvec,pvec,Mi=Mpi)
-    sig_kj = defns.sigma_i(E,Pvec,kvec,Mi=Mkj)
+    sig_pi = check_real(defns.sigma_i(E,Pvec,pvec,Mi=Mpi))
+    sig_kj = check_real(defns.sigma_i(E,Pvec,kvec,Mi=Mkj))
 
-    out = defns.hh(sig_pi,Mjk=[Mkj,Mbk])*defns.hh(sig_kj,Mjk=[Mpi,Mbk]) / (L**6 * 4*omp*omk*(bkp2-Mbk**2))
+    out = defns.hh(sig_pi,Mjk=np.array([Mkj,Mbk]))*defns.hh(sig_kj,Mjk=np.array([Mpi,Mbk])) / (L**6 * 4*omp*omk*(bkp2-Mbk**2))
     #out = defns.hh(E2p2)*defns.hh(E2k2)/(L**3 * 4*omp*omk*(bkp2-1))
 
     # nnks and nnps are the full vectors k* and p*
@@ -44,9 +45,7 @@ def G_ij(E, L, nnp, nnk,l1,m1,l2,m2,nnP, Mijk=[1,1,1], return_all=False):
 
     out *= defns.ylm(nnks,l1,m1) * defns.ylm(nnps,l2,m2)
 
-    if return_all==True:
-      return out.real, nnks, nnps
-    return out.real
+    return out.real, nnks, nnps
 
 ################################################################################
 # Compute block matrix Gtilde^{ij} = G^{ij}/(2*omega*L^3)
@@ -70,7 +69,7 @@ def Gmat_ij(E,L,nnP, Mijk=[1,1,1], nnp_list=None, nnk_list=None, waves_ij=('sp',
   for nnp in nnp_list:
     Gp = []
     for nnk in nnk_list:
-      Gpk_00, nnks, nnps = G_ij(E,L,np.array(nnp),np.array(nnk),0,0,0,0,np.array(nnP), Mijk=Mijk, return_all=True)
+      Gpk_00, nnks, nnps = G_ij(E,L,np.asarray(nnp),np.asarray(nnk),0,0,0,0,np.asarray(nnP), Mijk=Mijk)
       Gpk = Gpk_00 * np.ones((Wi,Wj))
       # Multiply by spherical harmonics
       for i1 in range(1,Wi):
@@ -86,6 +85,7 @@ def Gmat_ij(E,L,nnP, Mijk=[1,1,1], nnp_list=None, nnk_list=None, waves_ij=('sp',
 ################################################################################
 # Compute parity matrix PL of size (Ntot,Ntot)
 ################################################################################
+@njit(fastmath=True,cache=True)
 def get_parity_block(Ntot,waves='spd'):
   PL = np.eye(Ntot)
   for i in range(Ntot):
