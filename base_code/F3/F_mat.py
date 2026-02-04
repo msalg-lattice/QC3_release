@@ -255,7 +255,7 @@ def F_2pt_ND(E2,nnP2,L, M12=np.array([1,1]), waves='sp'):
 
 # ID case (s-wave only)
 @njit(fastmath=True,cache=True)
-def F_2pt_ID(E2,nnP2,L):
+def F_2pt_ID(E2,nnP2,L, M12=np.array([1,1])):
   M1,M2 = M12
   F = L**3 * F_i_nnk(E2+1,nnP2,L,np.array([0,0,0]), Mijk=np.array([1,1,1]), waves='s')
   return F
