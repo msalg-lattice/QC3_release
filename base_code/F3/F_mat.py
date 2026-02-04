@@ -101,9 +101,9 @@ def sum_full_nnk(E,nnP,L,nnk, Mijk=np.array([1,1,1]), waves='sp'):
             nnP2k_ = np.asarray(nnP2k, dtype=np.float64)
             rvec = nna + nnP2k_ * (np.dot(nna,nnP2k_)/np.sum(nnP2k_**2) * (1/gam-1) - alpha_ij/gam)
           for i1 in range(W):
-            [l1,m1] = defns.lm_idx(i1)
+            [l1,m1] = defns.lm_idx(i1, waves=waves)
             for i2 in range(W):
-              [l2,m2] = defns.lm_idx(i2)
+              [l2,m2] = defns.lm_idx(i2, waves=waves)
               out[i1,i2] += (2*pi/L)**(l1+l2) * summand(x2,rvec, l1,m1,l2,m2)
   return out # *const
 
