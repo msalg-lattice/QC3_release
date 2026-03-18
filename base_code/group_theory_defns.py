@@ -594,8 +594,8 @@ def free_levels_dict_2pt(M12,L,nnP,Ecm_max=4,sym='ID'):
     raise ValueError('Error: masses {} inconsistent with {} symmetry'.format(M12,sym))
 
   norm2 = lambda vec: sum([x**2 for x in vec])
-  Emax = sqrt(Ecm_max**2 + (2*pi/L)**2*norm2(nnP))
-  nmax = int(L/(2*pi) * sqrt(Emax*(Emax-2*M0))) # from assuming assuming 1 pt. at rest
+  Emax = check_real(sqrt(Ecm_max**2 + (2*pi/L)**2*norm2(nnP)))
+  nmax = int(L/(2*pi) * check_real(sqrt(Emax*(Emax-2*M0)))) # from assuming assuming 1 pt. at rest
 
   nvec_list = []
   for n1 in range(-nmax,nmax+1):
@@ -619,7 +619,7 @@ def free_levels_dict_2pt(M12,L,nnP,Ecm_max=4,sym='ID'):
       E2 = sqrt((2*pi/L)**2*n2_2 + M2**2)
 
       E = E1+E2
-      Ecm = sqrt(E**2-(2*pi/L)**2*sum([x**2 for x in nnP]))
+      Ecm = check_real(sqrt(E**2-(2*pi/L)**2*sum([x**2 for x in nnP])))
 
       if Ecm <= Ecm_max:
         # level = sym_sort([n1_2,n2_2], sym)
