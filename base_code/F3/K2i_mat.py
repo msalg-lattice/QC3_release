@@ -9,7 +9,6 @@ from numba import jit,njit
 ################################################################################
 # Calculate matrix element of K2i_inv/(2*omega), no L^3
 ################################################################################
-@jit(fastmath=True,cache=True,forceobj=True)
 def K2i_inv(E,kvec,l,m,Pvec,f_qcot_l, Mijk=[1,1,1], eta_i=1, IPV=0):
   [Mi,Mj,Mk] = Mijk
   k = LA.norm(kvec)
