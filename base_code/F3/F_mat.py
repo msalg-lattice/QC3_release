@@ -89,22 +89,26 @@ def sum_full_nnk(E,nnP,L,nnk, Mijk=np.array([1,1,1]), waves='sp'):
   nmax_real = getnmaxreal(cutoff,hhk,gam,x2)
   nmax = int(np.ceil(nmax_real))
 
+  lm_pairs = [(defns.lm_idx(i1, waves=waves), defns.lm_idx(i2, waves=waves))
+              for i1 in range(W) for i2 in range(W)]
+
   out = np.zeros((W,W))
   for n1 in range(-nmax,nmax+1):
     for n2 in range(-nmax,nmax+1):
       for n3 in range(-nmax,nmax+1):
-        nna = np.array([n1,n2,n3], dtype=np.float64)
-        if LA.norm(nna)<nmax_real: # and list(nna) not in nna_on_list:
+        if n1*n1 + n2*n2 + n3*n3 < nmax_real*nmax_real: # and [n1, n2, n3] not in nna_on_list:
+          nna = np.array([n1,n2,n3], dtype=np.float64)
           if np.all(nnP2k == 0):
             rvec = nna
           else:
             nnP2k_ = np.asarray(nnP2k, dtype=np.float64)
             rvec = nna + nnP2k_ * (np.dot(nna,nnP2k_)/np.sum(nnP2k_**2) * (1/gam-1) - alpha_ij/gam)
-          for i1 in range(W):
-            [l1,m1] = defns.lm_idx(i1, waves=waves)
-            for i2 in range(W):
-              [l2,m2] = defns.lm_idx(i2, waves=waves)
-              out[i1,i2] += (2*pi/L)**(l1+l2) * summand(x2,rvec, l1,m1,l2,m2)
+          for idx, lm_pair in enumerate(lm_pairs):
+            i1 = idx // W
+            i2 = idx % W
+            [l1,m1] = lm_pair[0]
+            [l2,m2] = lm_pair[1]
+            out[i1,i2] += (2*pi/L)**(l1+l2) * summand(x2,rvec, l1,m1,l2,m2)
   return out # *const
 
 
